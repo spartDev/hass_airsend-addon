@@ -2,16 +2,7 @@ ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # Install required packages
-RUN apk add --no-cache \
-    php8 \
-    php8-curl \
-    php8-json \
-    php8-mbstring \
-    php8-openssl \
-    curl \
-    bash \
-    jq \
-    procps
+RUN apk add --no-cache php php-curl
 
 # Create necessary directories
 RUN mkdir -p /home /share /config /tmp
@@ -39,8 +30,7 @@ RUN cd /home \
     && chmod -R 777 bin \
     && rm AirSendWebService.tgz
 
-# Create symlink for PHP8
-RUN ln -sf /usr/bin/php8 /usr/bin/php
+# PHP is already available as /usr/bin/php in Alpine
 
 # Health check
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
