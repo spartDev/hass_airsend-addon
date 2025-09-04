@@ -92,7 +92,7 @@ class SimpleYAMLParser {
 
 // Airsend API Client
 class AirsendClient {
-    private $devices = [];
+    public $devices = [];  // Made public for WebhookHandler access
     private $secrets = [];
     private $listeningStates = [];
     
@@ -460,8 +460,8 @@ class AirsendReceptionApp {
         }
         
         $this->client = new AirsendClient();
-        $devices = $this->client->getStatus()['devices'];
-        $this->webhookHandler = new WebhookHandler($this->api, $devices);
+        // Get the actual devices array, not just the count
+        $this->webhookHandler = new WebhookHandler($this->api, $this->client->devices);
         
         logMessage('INFO', 'Airsend Reception App initialized');
     }
