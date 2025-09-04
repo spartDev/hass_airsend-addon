@@ -31,11 +31,12 @@ cleanup() {
     log_info "Shutting down Airsend Reception..."
     
     if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            kill "$PID"
-            wait "$PID" 2>/dev/null || true
-        fi
+        while read PID; do
+            if kill -0 "$PID" 2>/dev/null; then
+                kill "$PID"
+                wait "$PID" 2>/dev/null || true
+            fi
+        done < "$PID_FILE"
         rm -f "$PID_FILE"
     fi
     
@@ -86,6 +87,17 @@ start_php_server() {
     local PHP_PID=$!
     echo "$PHP_PID" > "$PID_FILE"
     
+    # Also start PHP server on localhost:80 for legacy emission from AirSendWebService
+    php -S 127.0.0.1:80 callback.php \
+        -d error_reporting=E_ALL \
+        -d display_errors=Off \
+        -d log_errors=On \
+        -d error_log="$LOG_FILE" \
+        > /dev/null 2>&1 &
+    
+    local LEGACY_PID=$!
+    echo "$LEGACY_PID" >> "$PID_FILE"
+    
     # Wait for server to start
     sleep 2
     
@@ -128,9 +140,9 @@ initialize_listening() {
 
 # Health check function
 health_check() {
-    # Check if PHP server is running
+    # Check if PHP server is running (check first PID which is the main server)
     if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
+        PID=$(head -n1 "$PID_FILE")
         if ! kill -0 "$PID" 2>/dev/null; then
             log_error "PHP server is not running (PID $PID)"
             return 1
@@ -170,10 +182,11 @@ monitor_loop() {
             if [ $consecutive_failures -ge 3 ]; then
                 log_error "Too many consecutive failures, restarting service..."
                 
-                # Stop current instance
+                # Stop current instances
                 if [ -f "$PID_FILE" ]; then
-                    PID=$(cat "$PID_FILE")
-                    kill "$PID" 2>/dev/null || true
+                    while read PID; do
+                        kill "$PID" 2>/dev/null || true
+                    done < "$PID_FILE"
                     rm -f "$PID_FILE"
                 fi
                 
