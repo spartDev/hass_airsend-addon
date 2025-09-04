@@ -16,6 +16,7 @@ COPY init_reception.sh /home/
 COPY test_reception.sh /home/
 COPY run.sh /
 COPY run_simple.sh /
+COPY run_original.sh /
 
 # Set permissions
 RUN chmod a+x /home/state_post.sh \
@@ -23,7 +24,8 @@ RUN chmod a+x /home/state_post.sh \
     && chmod a+x /home/init_reception.sh \
     && chmod a+x /home/test_reception.sh \
     && chmod a+x /run.sh \
-    && chmod a+x /run_simple.sh
+    && chmod a+x /run_simple.sh \
+    && chmod a+x /run_original.sh
 
 # Install AirSendWebService
 RUN cd /home \
@@ -43,9 +45,8 @@ ENV RECEPTION_ENABLED=true
 ENV DEBUG=0
 ENV LOG_LEVEL=INFO
 
-# Start enhanced service with reception support
-# Using simple script for now to ensure basic functionality
-CMD [ "/run_simple.sh" ]
+# Start service - using original pattern that was working
+CMD [ "/run_original.sh" ]
 
 # Expose port for AirSend communication
 EXPOSE 33863

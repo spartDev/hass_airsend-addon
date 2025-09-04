@@ -23,6 +23,7 @@ echo "Starting PHP callback server on port 80..."
 php -S 127.0.0.1:80 callback.php 2>&1 | sed 's/^/[PHP80] /' &
 PHP_PID=$!
 
+# Note: In minimal mode, we can run reception server on 33863 since AirSendWebService is not running
 # Start PHP server for reception if enhanced callback exists
 if grep -q "AirsendReceptionApp" /home/callback.php 2>/dev/null; then
     echo "Starting reception server on port 33863..."

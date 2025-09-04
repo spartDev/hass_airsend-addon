@@ -69,15 +69,18 @@ wait_for_homeassistant() {
 
 # Start PHP server
 start_php_server() {
-    log_info "Starting PHP server on port 33863..."
+    log_info "Starting PHP server on port 80 for callback handling..."
     
-    # Kill any existing PHP server on the port
-    fuser -k 33863/tcp 2>/dev/null || true
+    # Note: Port 33863 is handled by AirSendWebService, not PHP
+    # We only need PHP on port 80 for the callback interface
+    
+    # Kill any existing PHP server on port 80
+    fuser -k 80/tcp 2>/dev/null || true
     sleep 1
     
-    # Start PHP server with callback.php (should be the enhanced version)
+    # Start PHP server on localhost:80 for callback handling
     cd /home
-    php -S 0.0.0.0:33863 callback.php \
+    php -S 127.0.0.1:80 callback.php \
         -d error_reporting=E_ALL \
         -d display_errors=Off \
         -d log_errors=On \
@@ -87,17 +90,6 @@ start_php_server() {
     local PHP_PID=$!
     echo "$PHP_PID" > "$PID_FILE"
     
-    # Also start PHP server on localhost:80 for legacy emission from AirSendWebService
-    php -S 127.0.0.1:80 callback.php \
-        -d error_reporting=E_ALL \
-        -d display_errors=Off \
-        -d log_errors=On \
-        -d error_log="$LOG_FILE" \
-        > /dev/null 2>&1 &
-    
-    local LEGACY_PID=$!
-    echo "$LEGACY_PID" >> "$PID_FILE"
-    
     # Wait for server to start
     sleep 2
     
@@ -106,7 +98,8 @@ start_php_server() {
         return 1
     fi
     
-    log_info "PHP server started with PID $PHP_PID"
+    log_info "PHP callback server started with PID $PHP_PID on port 80"
+    log_info "Note: AirSendWebService handles port 33863 for reception"
     return 0
 }
 
@@ -116,8 +109,8 @@ initialize_listening() {
     
     local retries=0
     while [ $retries -lt $MAX_RETRIES ]; do
-        # Call initialization endpoint
-        response=$(curl -s -X GET "http://localhost:33863/initialize" 2>/dev/null || echo "{}")
+        # Call initialization endpoint on port 80 (PHP callback server)
+        response=$(curl -s -X GET "http://localhost:80/initialize" 2>/dev/null || echo "{}")
         
         if echo "$response" | grep -q '"success":true'; then
             log_info "Listening mode initialized successfully"
@@ -152,8 +145,8 @@ health_check() {
         return 1
     fi
     
-    # Check server status endpoint
-    response=$(curl -s -f "http://localhost:33863/status" 2>/dev/null || echo "{}")
+    # Check server status endpoint on port 80 (PHP callback server)
+    response=$(curl -s -f "http://localhost:80/status" 2>/dev/null || echo "{}")
     
     if ! echo "$response" | grep -q '"api_authorized":true'; then
         log_error "Health check failed: API not authorized"
@@ -249,7 +242,7 @@ main() {
     
     # Display status
     log_info "=== System Status ==="
-    curl -s "http://localhost:33863/status" 2>/dev/null | tee -a "$LOG_FILE" || true
+    curl -s "http://localhost:80/status" 2>/dev/null | tee -a "$LOG_FILE" || true
     echo "" >> "$LOG_FILE"
     
     # Start monitoring loop

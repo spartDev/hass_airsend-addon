@@ -59,17 +59,11 @@ echo "Starting PHP callback server..."
 php -S 127.0.0.1:80 callback.php &
 PHP_PID=$!
 
-# If reception is enabled and we have the enhanced callback, start reception server too
-if [ -f /home/callback.php ] && grep -q "AirsendReceptionApp" /home/callback.php 2>/dev/null; then
-    echo "Starting reception server on port 33863..."
-    php -S 0.0.0.0:33863 callback.php &
-    RECEPTION_PID=$!
-fi
+# Note: AirSendWebService handles port 33863, no need for separate PHP server there
 
 echo "Services started:"
-echo "  AirSendWebService: PID $AIRSEND_PID"
-echo "  PHP Callback: PID $PHP_PID"
-[ -n "${RECEPTION_PID:-}" ] && echo "  Reception Server: PID $RECEPTION_PID"
+echo "  AirSendWebService: PID $AIRSEND_PID (handles port 33863)"
+echo "  PHP Callback: PID $PHP_PID (port 80)"
 
 # Keep the script running - but don't exit if AirSendWebService dies
 # It might be that AirSendWebService isn't needed for basic emission
@@ -99,12 +93,7 @@ while true; do
         PHP_PID=$!
     fi
     
-    # Check reception server if it exists
-    if [ -n "${RECEPTION_PID:-}" ] && ! kill -0 $RECEPTION_PID 2>/dev/null; then
-        echo "Reception server died, restarting..."
-        php -S 0.0.0.0:33863 callback.php &
-        RECEPTION_PID=$!
-    fi
+    # No need to check reception server - AirSendWebService handles port 33863
     
     sleep 30
 done
