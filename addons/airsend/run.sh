@@ -59,8 +59,15 @@ log_info "Internal URL: http://${hname}:33863/"
 # Set up Home Assistant token if running in supervisor
 if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     echo "${SUPERVISOR_TOKEN}" > hass_api.token
-    echo "$(bashio::config 'auto_include')" > auto_include.cfg
-    echo "$(bashio::config 'reception_enabled' 'true')" > reception_enabled.cfg
+    
+    # Use bashio if available, otherwise use defaults
+    if command -v bashio &> /dev/null; then
+        bashio::config 'auto_include' > auto_include.cfg 2>/dev/null || echo "true" > auto_include.cfg
+        bashio::config 'reception_enabled' > reception_enabled.cfg 2>/dev/null || echo "true" > reception_enabled.cfg
+    else
+        echo "true" > auto_include.cfg
+        echo "true" > reception_enabled.cfg
+    fi
     
     # Export for child processes
     export SUPERVISOR_TOKEN
@@ -77,18 +84,41 @@ ulimit -n 4096
 
 # Start AirSendWebService (original functionality)
 log_info "Starting AirSendWebService..."
-./bin/unix/${arch}/AirSendWebService 99399 > /share/airsend_service.log 2>&1 &
+
+# Make sure the binary is executable
+chmod +x ./bin/unix/${arch}/AirSendWebService 2>/dev/null || true
+
+# The AirSendWebService runs in foreground, so we need to run it with nohup in background
+nohup ./bin/unix/${arch}/AirSendWebService 99399 > /share/airsend_service.log 2>&1 &
 AIRSEND_PID=$!
 
-# Wait for AirSendWebService to start
-sleep 5
+log_info "AirSendWebService starting with PID $AIRSEND_PID..."
 
+# Give it more time to start as it might need to initialize
+sleep 10
+
+# Check if it's still running
 if ! kill -0 $AIRSEND_PID 2>/dev/null; then
-    log_error "Failed to start AirSendWebService"
-    exit 1
+    log_error "AirSendWebService failed to start or crashed"
+    # Show error output
+    if [ -f /share/airsend_service.log ]; then
+        log_error "Error output from AirSendWebService:"
+        cat /share/airsend_service.log | while read line; do
+            log_error "  $line"
+        done
+    fi
+    # Try alternative: run in foreground in background subshell
+    log_info "Attempting alternative startup method..."
+    ( ./bin/unix/${arch}/AirSendWebService 99399 2>&1 | tee /share/airsend_service.log ) &
+    AIRSEND_PID=$!
+    sleep 5
+    if ! kill -0 $AIRSEND_PID 2>/dev/null; then
+        log_error "Alternative startup also failed"
+        exit 1
+    fi
 fi
 
-log_info "AirSendWebService started with PID $AIRSEND_PID"
+log_info "AirSendWebService running with PID $AIRSEND_PID"
 
 # Check if reception should be enabled
 if [ "${RECEPTION_ENABLED}" = "true" ] && [ "${HASS_API_AUTHORIZED}" = "true" ]; then
