@@ -1,0 +1,79 @@
+# Airsend Device Configuration Example
+# Place this file at /config/airsend.yaml in your Home Assistant installation
+# 
+# This file defines your Airsend-controlled devices for bidirectional reception.
+# When a physical remote is pressed, the addon will update the corresponding
+# Home Assistant entity automatically.
+
+# Example configuration for Somfy RTS shutters
+# Replace the values with your actual device information
+
+devices:
+  Volet séjour baie vitrée:
+    # Device identifier (used to create entity_id)
+    id: 67706
+    # Protocol type (4099 = Somfy RTS)
+    type: 4099
+    # Wait for command completion
+    wait: true
+    # Connection URL with password and IP (reference from secrets.yaml)
+    spurl: !secret spurl
+    # Channel configuration
+    channel:
+      # Channel ID from your Airsend configuration
+      id: 13920
+      # Source ID (remote control identifier)
+      source: 567765
+      # Enable reception for this device (set to true to receive remote events)
+      listen: true
+
+  Volet chambre principale:
+    id: 67707
+    type: 4099
+    wait: true
+    spurl: !secret spurl  # Same Airsend device
+    channel:
+      id: 13921
+      source: 567766
+      listen: false  # Only one channel can listen at a time per device
+
+  Volet cuisine:
+    id: 67708
+    type: 4099
+    wait: true
+    # Direct spurl for IPv6 example
+    spurl: "sp://mypassword@fe80::1234:5678:90ab:cdef"
+    channel:
+      id: 13922
+      source: 567767
+      listen: false
+
+  Store terrasse:
+    id: 67709
+    type: 4099
+    wait: false  # Don't wait for completion
+    spurl: !secret spurl_2  # Second Airsend device
+    channel:
+      id: 13923
+      source: 567768
+      listen: true  # This device can listen since it's a different Airsend
+
+# Notes:
+# 1. Entity IDs will be created as: cover.airsend_[device_name_normalized]
+#    Example: "Volet séjour baie vitrée" becomes "cover.airsend_volet_sejour_baie_vitree"
+#
+# 2. Only devices with "listen: true" will have reception enabled
+#
+# 3. The Airsend can only listen to one channel at a time per device
+#
+# 4. Remote button presses will update the entity state:
+#    - UP command → state: open
+#    - DOWN command → state: closed
+#    - STOP command → state: stopped
+#    - MY command → state: preset
+#
+# 5. Each state change also fires a custom event: "airsend_remote_pressed"
+#    You can use this event in automations
+#
+# 6. Make sure the channel IDs match your actual Airsend configuration
+#    You can find these in the Airsend web interface or documentation

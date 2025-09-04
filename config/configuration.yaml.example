@@ -1,0 +1,277 @@
+# Home Assistant Configuration Examples for Airsend Reception
+# Add these to your Home Assistant configuration.yaml file
+
+# ============================================================================
+# REST COMMANDS - Control the addon remotely
+# ============================================================================
+
+rest_command:
+  # Initialize listening mode for all configured devices
+  airsend_init_reception:
+    url: "http://localhost:33863/initialize"
+    method: GET
+    headers:
+      accept: "application/json"
+    
+  # Get current status of the reception system
+  airsend_get_status:
+    url: "http://localhost:33863/status"
+    method: GET
+    headers:
+      accept: "application/json"
+
+  # Simulate a remote button press (for testing)
+  airsend_simulate_remote:
+    url: "http://localhost:33863/webhook"
+    method: POST
+    headers:
+      content-type: "application/json"
+    payload: >-
+      {
+        "method": "radio",
+        "channel": {{ channel }},
+        "source": {{ source }},
+        "command": "{{ command }}",
+        "timestamp": {{ now().timestamp() | int }},
+        "reliability": 15
+      }
+
+# ============================================================================
+# SENSORS - Monitor the reception system
+# ============================================================================
+
+sensor:
+  # Monitor reception system status
+  - platform: rest
+    name: Airsend Reception Status
+    resource: http://localhost:33863/status
+    json_attributes:
+      - devices
+      - listening
+      - api_authorized
+      - callback_url
+    value_template: "{{ value_json.api_authorized }}"
+    scan_interval: 60
+
+  # Monitor reception system logs (last error)
+  - platform: command_line
+    name: Airsend Last Error
+    command: "tail -n 50 /share/airsend_reception.log | grep ERROR | tail -n 1"
+    scan_interval: 300
+
+# ============================================================================
+# BINARY SENSORS - Health monitoring
+# ============================================================================
+
+binary_sensor:
+  # Check if reception system is healthy
+  - platform: rest
+    name: Airsend Reception Health
+    resource: http://localhost:33863/status
+    value_template: "{{ value_json.api_authorized == true }}"
+    device_class: connectivity
+    scan_interval: 60
+
+# ============================================================================
+# AUTOMATIONS - React to physical remote button presses
+# ============================================================================
+
+automation:
+  # Example: Sync physical remote state to Home Assistant
+  - alias: "Airsend: Sync Physical Remote State"
+    description: "Update cover state when physical remote is used"
+    trigger:
+      - platform: event
+        event_type: airsend_remote_pressed
+    action:
+      - service: cover.set_cover_position
+        target:
+          entity_id: "{{ trigger.event.data.entity_id }}"
+        data:
+          position: >-
+            {% if trigger.event.data.state == 'open' %}
+              100
+            {% elif trigger.event.data.state == 'closed' %}
+              0
+            {% else %}
+              50
+            {% endif %}
+      - service: notify.persistent_notification
+        data:
+          title: "Airsend Remote Pressed"
+          message: >-
+            Device: {{ trigger.event.data.device_name }}
+            Command: {{ trigger.event.data.command }}
+            State: {{ trigger.event.data.state }}
+
+  # Example: Mirror shutter state to another device
+  - alias: "Airsend: Mirror Shutter Control"
+    description: "When living room shutter is controlled, also control bedroom"
+    trigger:
+      - platform: event
+        event_type: airsend_remote_pressed
+        event_data:
+          device_name: "Volet séjour baie vitrée"
+    action:
+      - service: >-
+          {% if trigger.event.data.command == 'up' %}
+            cover.open_cover
+          {% elif trigger.event.data.command == 'down' %}
+            cover.close_cover
+          {% else %}
+            cover.stop_cover
+          {% endif %}
+        target:
+          entity_id: cover.airsend_volet_chambre_principale
+
+  # Example: Set scene when MY button is pressed
+  - alias: "Airsend: MY Button Scene"
+    description: "Activate scene when MY button is pressed on any shutter"
+    trigger:
+      - platform: event
+        event_type: airsend_remote_pressed
+        event_data:
+          command: "my"
+    action:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.comfort_mode
+      - service: notify.mobile_app_phone
+        data:
+          title: "Comfort Mode"
+          message: "MY button pressed on {{ trigger.event.data.device_name }}"
+
+  # Example: Initialize reception on Home Assistant start
+  - alias: "Airsend: Initialize Reception on Startup"
+    description: "Ensure reception is initialized when HA starts"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - delay:
+          seconds: 30
+      - service: rest_command.airsend_init_reception
+      - service: notify.persistent_notification
+        data:
+          title: "Airsend Reception"
+          message: "Reception system initialized"
+
+  # Example: Reinitialize if health check fails
+  - alias: "Airsend: Auto-recover Reception"
+    description: "Reinitialize reception if health check fails"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.airsend_reception_health
+        to: "off"
+        for:
+          minutes: 5
+    action:
+      - service: rest_command.airsend_init_reception
+      - service: notify.persistent_notification
+        data:
+          title: "Airsend Reception"
+          message: "Reception system reinitialized due to health check failure"
+
+# ============================================================================
+# SCRIPTS - Useful operations
+# ============================================================================
+
+script:
+  # Initialize reception for all devices
+  airsend_init_all:
+    alias: "Initialize Airsend Reception"
+    sequence:
+      - service: rest_command.airsend_init_reception
+      - delay:
+          seconds: 2
+      - service: rest_command.airsend_get_status
+
+  # Test reception with simulated button press
+  airsend_test_reception:
+    alias: "Test Airsend Reception"
+    mode: single
+    fields:
+      device_channel:
+        description: "Channel ID of the device"
+        example: 13920
+      device_source:
+        description: "Source ID of the remote"
+        example: 567765
+      command:
+        description: "Command to send (up, down, stop, my)"
+        example: "down"
+    sequence:
+      - service: rest_command.airsend_simulate_remote
+        data:
+          channel: "{{ device_channel }}"
+          source: "{{ device_source }}"
+          command: "{{ command }}"
+
+  # Check system health and report
+  airsend_health_check:
+    alias: "Airsend Health Check"
+    sequence:
+      - service: rest_command.airsend_get_status
+      - delay:
+          seconds: 1
+      - condition: state
+        entity_id: binary_sensor.airsend_reception_health
+        state: "on"
+      - service: notify.persistent_notification
+        data:
+          title: "Airsend Health Check"
+          message: "Reception system is healthy"
+
+# ============================================================================
+# CUSTOM PANELS - Add to Lovelace dashboard
+# ============================================================================
+
+# Example Lovelace card configuration:
+# type: vertical-stack
+# cards:
+#   - type: entity
+#     entity: binary_sensor.airsend_reception_health
+#     name: Reception System
+#     icon: mdi:radio-tower
+#   
+#   - type: entities
+#     title: Airsend Shutters
+#     entities:
+#       - entity: cover.airsend_volet_sejour_baie_vitree
+#         name: Living Room
+#       - entity: cover.airsend_volet_chambre_principale
+#         name: Master Bedroom
+#       - entity: cover.airsend_volet_cuisine
+#         name: Kitchen
+#   
+#   - type: button
+#     name: Initialize Reception
+#     icon: mdi:play
+#     tap_action:
+#       action: call-service
+#       service: script.airsend_init_all
+#
+#   - type: markdown
+#     content: |
+#       **Last Update:** {{ states.sensor.airsend_reception_status.last_updated }}
+#       **Devices:** {{ state_attr('sensor.airsend_reception_status', 'devices') }}
+
+# ============================================================================
+# GROUPS - Organize entities
+# ============================================================================
+
+group:
+  airsend_covers:
+    name: Airsend Shutters
+    entities:
+      - cover.airsend_volet_sejour_baie_vitree
+      - cover.airsend_volet_chambre_principale
+      - cover.airsend_volet_cuisine
+      - cover.airsend_store_terrasse
+
+  airsend_monitoring:
+    name: Airsend Monitoring
+    entities:
+      - binary_sensor.airsend_reception_health
+      - sensor.airsend_reception_status
+      - sensor.airsend_last_error
